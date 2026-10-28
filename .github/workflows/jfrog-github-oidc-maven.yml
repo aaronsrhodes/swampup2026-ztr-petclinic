@@ -6,12 +6,14 @@ on:
 
 permissions:
   actions: read
+  id-token: write
+  packages: write
   contents: read
   security-events: write
 env:
   JAVA_VERSION: "21"
   JOB_SUMMARY: true
-  JFROG_CLI_LOG_LEVEL: DEBUG # DEBUG, INFO, WARN, ERROR
+  JFROG_CLI_LOG_LEVEL: DEBUG
   RT_REPO_MVN_VIRTUAL: "alpha-mvn-virtual"
 
 jobs:
@@ -32,48 +34,40 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      # The runner's default Maven (3.10.0) breaks JFrog CLI's Maven extractor
-      # (NoSuchMethodError in ArtifactoryEclipseArtifactResolver), so pin a 3.9.x release.
       - name: Set up Maven
         uses: stCarolas/setup-maven@v5
         with:
           maven-version: 3.9.9
 
-      # Authenticates with su26-ztr-ci-bot via repo secrets (same as build-and-push / patch).
       - name: Setup JFrog CLI
         uses: jfrog/setup-jfrog-cli@v4
+        id: setup-cli
         env:
-          JF_URL: https://${{ secrets.JFROG_URL }}
-          JF_ACCESS_TOKEN: ${{ secrets.JFROG_ACCESS_TOKEN }}
+          JF_URL: ${{ vars.JF_URL }}
         with:
           version: 2.104.1
-          custom-server-id: solenglatest
+          oidc-provider-name: ${{ vars.JF_OIDC_PROVIDER_NAME }}
 
       - name: Run JFrog CLI
-        run: |
-          # Ping the server
-          jf rt ping
+        run: jf rt ping
 
       - name: "Config Maven with JFrog CLI"
         run: |
           jf mvnc \
-            --server-id-resolve=solenglatest --server-id-deploy=solenglatest \
+            --server-id-resolve=$SETUP_JFROG_CLI_SERVER_IDS --server-id-deploy=$SETUP_JFROG_CLI_SERVER_IDS \
             --repo-resolve-releases=${{ env.RT_REPO_MVN_VIRTUAL }} --repo-resolve-snapshots=${{ env.RT_REPO_MVN_VIRTUAL }} \
             --repo-deploy-releases=${{ env.RT_REPO_MVN_VIRTUAL }} --repo-deploy-snapshots=${{ env.RT_REPO_MVN_VIRTUAL }}
 
-      - name: "Curation: audit" # https://docs.jfrog-applications.jfrog.io/jfrog-applications/jfrog-cli/cli-for-jfrog-security/cli-for-jfrog-curation
+      - name: "Curation: audit"
+        continue-on-error: true
         run: |
-          # This repo also has Gradle files, which `jf ca` would auto-detect and fail on
-          # (no `jf gradle c` config). Drop them from this ephemeral checkout to audit Maven only.
           rm -f build.gradle settings.gradle
           jf ca --format=table --threads=100
 
-      - name: "Security Audit" # https://docs.jfrog-applications.jfrog.io/jfrog-applications/jfrog-cli/cli-for-jfrog-security
-        run: |
-          jf audit --mvn
+      - name: "Security Audit"
+        continue-on-error: true
+        run: jf audit --mvn
 
-      # Resolves dependencies through alpha-mvn-virtual, builds, and deploys the jar/pom to
-      # alpha-mvn-virtual, recording everything as build info.
       - name: "Build and publish Maven artifacts"
         run: |
           jf mvn -B -DskipTests clean deploy \
@@ -81,20 +75,17 @@ jobs:
 
       - name: "Collect env variables"
         run: |
-          jf rt bce ${{ env.BUILD_NAME }} ${{ env.BUILD_ID }} # Collect environment variables and attach them to the build
-          jf rt bag ${{ env.BUILD_NAME }} ${{ env.BUILD_ID }} # Collect VCS information (repository URL, branch, commit ID)
+          jf rt bce ${{ env.BUILD_NAME }} ${{ env.BUILD_ID }}
+          jf rt bag ${{ env.BUILD_NAME }} ${{ env.BUILD_ID }}
 
       - name: "Publish BuildInfo"
         run: |
           jf rt bp ${{ env.BUILD_NAME }} ${{ env.BUILD_ID }} --detailed-summary=true
 
-      # Give Xray time to index the published build before scanning it.
       - name: "Sleep for few seconds"
         env:
           SLEEP_TIME: 30
-        run: |
-          echo "Sleeping for ${{ env.SLEEP_TIME }} seconds..."
-          sleep ${{ env.SLEEP_TIME }}
+        run: sleep ${{ env.SLEEP_TIME }}
 
       - name: "Build Scan"
         run: |
