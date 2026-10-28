@@ -186,9 +186,10 @@ This fork of spring-petclinic exists to demo JFrog's Zero Touch Remediation
 (self-healing) capability at SwampUp 2026, on the shared `solenglatest`
 JFrog Platform instance.
 
-- `pom.xml` deliberately pins `org.yaml:snakeyaml:1.30`, a version affected by
-  a real, known vulnerability (CVE-2022-1471, Constructor deserialization RCE,
-  fixed in 1.31). This is intentional demo content, not an oversight.
+- `pom.xml` deliberately pins `org.apache.logging.log4j:log4j-core:2.14.1`, a
+  version affected by Log4Shell (CVE-2021-44228, fixed in 2.17.1+). Chainguard
+  carries a remediated rebuild on `solenglatest`, so resolution through
+  `alpha-mvn-virtual` can demonstrate real Zero-Touch Remediation.
 - `.github/workflows/build-and-push.yml` builds this app and pushes it as
   `petclinic:vulnerable-<sha>` to solenglatest's `base-image-remediation-demo`
   Docker repo (ZTR-enabled) on every push to `main`.
