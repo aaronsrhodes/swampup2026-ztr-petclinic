@@ -1,12 +1,13 @@
 name: "mpate-petclinic-maven"
-on: push
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
 
 permissions:
-  actions: read # for detecting the Github Actions environment.
-  id-token: write # for creating OIDC tokens for signing.
-  packages: write # for uploading attestations.
+  actions: read
   contents: read
-  security-events: write # Required for uploading code scanning.
+  security-events: write
 env:
   JAVA_VERSION: "21"
   JOB_SUMMARY: true
@@ -38,17 +39,15 @@ jobs:
         with:
           maven-version: 3.9.9
 
-      # Authenticates to the JFrog Platform with a GitHub OIDC token (no stored secrets).
-      # Requires an OIDC integration named below in the JFrog Platform, with an identity mapping
-      # for this repository, and the JF_URL repository/organization variable.
+      # Authenticates with su26-ztr-ci-bot via repo secrets (same as build-and-push / patch).
       - name: Setup JFrog CLI
         uses: jfrog/setup-jfrog-cli@v4
-        id: setup-cli
         env:
-          JF_URL: ${{ vars.JF_URL }}
+          JF_URL: https://${{ secrets.JFROG_URL }}
+          JF_ACCESS_TOKEN: ${{ secrets.JFROG_ACCESS_TOKEN }}
         with:
           version: 2.104.1
-          oidc-provider-name: ${{ vars.JF_OIDC_PROVIDER_NAME }}
+          custom-server-id: solenglatest
 
       - name: Run JFrog CLI
         run: |
@@ -58,7 +57,7 @@ jobs:
       - name: "Config Maven with JFrog CLI"
         run: |
           jf mvnc \
-            --server-id-resolve=$SETUP_JFROG_CLI_SERVER_IDS --server-id-deploy=$SETUP_JFROG_CLI_SERVER_IDS \
+            --server-id-resolve=solenglatest --server-id-deploy=solenglatest \
             --repo-resolve-releases=${{ env.RT_REPO_MVN_VIRTUAL }} --repo-resolve-snapshots=${{ env.RT_REPO_MVN_VIRTUAL }} \
             --repo-deploy-releases=${{ env.RT_REPO_MVN_VIRTUAL }} --repo-deploy-snapshots=${{ env.RT_REPO_MVN_VIRTUAL }}
 
